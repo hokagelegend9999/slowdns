@@ -1,5 +1,10 @@
 # Server SlowDNS
 
+## INSTALL
+```
+wget -qO- https://raw.githubusercontent.com/hokagelegend9999/slowdns/main/install.sh | bash
+```
+
 [Bahasa Indonesia](#bahasa-indonesia) | [English](#english)
 
 ## Bahasa Indonesia
