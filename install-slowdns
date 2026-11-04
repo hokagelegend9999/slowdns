@@ -1,0 +1,103 @@
+#!/bin/bash
+# Auto-Installer SlowDNS by Hokage Legend
+# Menggunakan setelan stabil (IPv4 Only, No NAT conflict, Upstream Port 22)
+
+# 1. Pengecekan Akses Root
+if [ "$(id -u)" != "0" ]; then
+    echo "Error: Jalankan script ini sebagai root (sudo bash install.sh)"
+    exit 1
+fi
+
+clear
+echo -e "=========================================================="
+echo -e "         AUTO INSTALLER SLOWDNS BY HOKAGE LEGEND          "
+echo -e "=========================================================="
+
+# 2. Meminta Input NS Domain (Satu-satunya input manual)
+read -p "Masukkan NS Domain SlowDNS (contoh: dns-ajii.hokage.web.id): " DOMAIN_NAME
+if [ -z "$DOMAIN_NAME" ]; then
+    echo "Error: NS Domain tidak boleh kosong!"
+    exit 1
+fi
+
+echo -e "\n[*] Memulai instalasi dan konfigurasi..."
+
+# 3. Disable IPv6 (Wajib untuk mencegah konflik UDP UDPv6)
+echo "[*] Mematikan IPv6 pada kernel..."
+sh -c 'echo "net.ipv6.conf.all.disable_ipv6 = 1" > /etc/sysctl.d/99-disable-ipv6.conf'
+sh -c 'echo "net.ipv6.conf.default.disable_ipv6 = 1" >> /etc/sysctl.d/99-disable-ipv6.conf'
+sh -c 'echo "net.ipv6.conf.lo.disable_ipv6 = 1" >> /etc/sysctl.d/99-disable-ipv6.conf'
+sysctl -p /etc/sysctl.d/99-disable-ipv6.conf >/dev/null 2>&1
+
+# 4. Membersihkan Instalasi & Konflik Lama
+echo "[*] Membersihkan direktori dan service lama..."
+systemctl stop slowdns >/dev/null 2>&1
+systemctl disable slowdns >/dev/null 2>&1
+systemctl stop sldns-server >/dev/null 2>&1
+killall udp-mini >/dev/null 2>&1
+rm -f /etc/systemd/system/slowdns.service
+rm -rf /etc/slowdns
+mkdir -p /etc/slowdns
+
+# 5. Mengunduh Binary dari GitHub Hokage Legend
+echo "[*] Mengunduh binary SlowDNS..."
+cd /etc/slowdns
+wget -q -O /etc/slowdns/slowdns https://raw.githubusercontent.com/hokagelegend9999/slowdns/main/slowdns
+chmod +x /etc/slowdns/slowdns
+
+# 6. Membuat Kunci Publik & Privat
+echo "[*] Membuat pasangan kunci enkripsi..."
+/etc/slowdns/slowdns -gen-key -privkey-file /etc/slowdns/server.key -pubkey-file /etc/slowdns/server.pub
+
+# 7. Menyesuaikan DNS Resolver Ubuntu (Mencegah port 53 dibajak systemd)
+echo "[*] Menyesuaikan DNS Resolver Internal..."
+systemctl disable --now systemd-resolved >/dev/null 2>&1
+rm -f /etc/resolv.conf
+echo -e "nameserver 8.8.8.8\nnameserver 1.1.1.1" > /etc/resolv.conf
+
+# 8. Membuat Service Systemd Identik Qarib/Ajii
+echo "[*] Membangun service systemd..."
+cat > /etc/systemd/system/slowdns.service << EOF
+[Unit]
+Description=SlowDNS Server by Hokage Legend
+After=network.target nss-lookup.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/etc/slowdns/slowdns -udp 0.0.0.0:53 -privkey-file /etc/slowdns/server.key $DOMAIN_NAME 127.0.0.1:22
+Restart=always
+RestartSec=3s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 9. Mengunci Hak Akses Keamanan
+echo "[*] Menyesuaikan perizinan file..."
+chown -R root:root /etc/slowdns
+chmod 755 /etc/slowdns
+chmod 755 /etc/slowdns/slowdns
+chmod 600 /etc/slowdns/server.key
+chmod 644 /etc/slowdns/server.pub
+
+# 10. Reload & Start Service
+echo "[*] Menjalankan layanan SlowDNS..."
+systemctl daemon-reload
+systemctl enable slowdns >/dev/null 2>&1
+systemctl start slowdns
+
+# 11. Tampilan Hasil Akhir
+clear
+PUB_KEY=$(cat /etc/slowdns/server.pub)
+echo -e "=========================================================="
+echo -e "          INSTALASI SLOWDNS HOKAGE LEGEND SUKSES          "
+echo -e "=========================================================="
+echo -e "NS Domain    : $DOMAIN_NAME"
+echo -e "Public Key   : $PUB_KEY"
+echo -e "Listen Port  : 53 (IPv4 Only)"
+echo -e "Upstream     : 127.0.0.1:22"
+echo -e "=========================================================="
+echo -e "Salin Public Key di atas (tanpa spasi) ke HTTP Custom Anda."
+echo -e "Perintah cek log: sudo journalctl -u slowdns.service -f"
+echo -e "=========================================================="
